@@ -1,0 +1,30 @@
+<mujoco model="pendulum">
+  <option gravity="0 0 -9.81" integrator="RK4" timestep="0.001"/>
+  
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1=".1 .2 .3" rgb2=".2 .3 .4" width="300" height="300"/>
+    <material name="grid" texture="grid" texrepeat="1 1" texuniform="true" reflectance=".2"/>
+  </asset>
+  
+  <worldbody>
+    <!-- Ground plane -->
+    <geom name="floor" type="plane" size="2 2 0.1" material="grid"/>
+    
+    <!-- Light source -->
+    <light pos="0 0 3" dir="0 0 -1" diffuse="1 1 1"/>
+    
+    <!-- Pendulum root - fixed to world -->
+    <body name="base" pos="0 0 1">
+      <joint name="root" type="free" limited="false"/>
+      <geom name="base" type="sphere" size="0.05" rgba="0.5 0.5 0.5 1"/>
+      
+      <!-- Pendulum arm -->
+      <body name="arm" pos="0 0 0">
+        <joint name="hinge" type="hinge" axis="0 1 0" damping="0.1"/>
+        <geom name="arm" type="capsule" fromto="0 0 0 0 0 -0.5" size="0.02" rgba="0 0.7 0.7 1"/>
+        <!-- Pendulum weight -->
+        <geom name="weight" type="sphere" pos="0 0 -0.5" size="0.1" rgba="0.7 0 0 1" mass="1"/>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>
