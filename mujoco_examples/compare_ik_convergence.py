@@ -407,6 +407,8 @@ def run_convergence_analysis(model_path, num_samples=20, max_iterations=200, ran
     plt.legend()
     plt.grid(True, which="both", ls="--")
     plt.tight_layout()
+    plt.savefig("../visualizations/compare_ik_convergence.png")
+    plt.show()
     
     # Return the collected statistics
     return {
