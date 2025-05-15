@@ -1,3 +1,7 @@
+"""This example compares custom rotation matrix implementations with scipy's rotation functions.
+It includes functions to rotate points around the x, y, and z axes using both custom and scipy methods.
+"""
+
 import numpy as np
 import argparse
 import matplotlib.pyplot as plt
