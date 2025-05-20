@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 /mujoco_menagerie
 *.mp4
+/extra
+mujoco_examples/extra/
