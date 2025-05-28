@@ -21,5 +21,3 @@ The object is a rigid box for simplicity. The robot arm is ur5e model from Mujoc
 The object has arbitrary shape and we use grasp detectors (AnyGrasp, GraspIt) to find the best grasp pose.
 - The object has arbitrary shape and we use grasp detectors (AnyGrasp, GraspIt) to find the best grasp pose.
 - Hook up VLMs to do common-sense visual reasoning to choose the best grasp candidates.
-
-Estimated amount of time to complete the project is 3-4 weeks (until July 2025).
