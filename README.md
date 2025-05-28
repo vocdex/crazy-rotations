@@ -3,7 +3,7 @@ This is a collection of scripts to learn the basics of robotics using MuJoco phy
 
 Here's are the notes on various topics:
 
-- [Inverse Kinematics](./inverse_kinematics.md)
+- [Numerical Inverse Kinematics with Mujoco](./inverse_kinematics.md)
 - [MuJoco Basics](./mujoco_basics.md)
 - [Rotation Representations](./rotation_representations.md)
 
