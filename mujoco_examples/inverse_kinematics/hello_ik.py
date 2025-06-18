@@ -8,6 +8,7 @@ import mujoco.viewer
 import numpy as np
 import time
 from scipy.interpolate import interp1d
+from traj_visualizer import RealTimeTrailVisualizer
 
 integration_dt: float = 1.0
 damping: float = 1e-4
@@ -15,11 +16,12 @@ gravity_compensation: bool = True
 dt: float = 0.002
 
 max_angvel = 1.0  # Limit velocity for smoother writing
-word_scale = 0.15
+word_scale = 0.2
 
-drawing_x = 0.6  # X position of the vertical drawing plane
-pen_out_x = drawing_x - 0.05  # X position when pen is lifted away from surface
-
+#Table parameters
+table_height = 0.30
+drawing_z = table_height + 0.01  # Just above the table surface
+pen_out_z = table_height + 0.1   # Lifted position above table
 
 def generate_letter_paths():
     """
@@ -32,36 +34,37 @@ def generate_letter_paths():
     t = np.linspace(0, 1, 100)
     
     # Letter 'h'
-    h_y = 0.3 * np.ones_like(t)
-    h_z = 0.3 * np.sin(np.pi * t)
+    h_x = 0.3 * np.ones_like(t)
+    h_y = 0.3 * np.sin(np.pi * t)
     # Add the hook at the top
-    h_y[70:] = 0.3 + 0.15 * (t[70:] - t[70]) / (t[-1] - t[70])
-    h_z[70:] = 0.3 - 0.15 * (t[70:] - t[70]) / (t[-1] - t[70])
-    letter_paths['h'] = np.column_stack((h_y, h_z))
+    h_x[70:] = 0.3 + 0.15 * (t[70:] - t[70]) / (t[-1] - t[70])
+    h_y[70:] = 0.3 - 0.15 * (t[70:] - t[70]) / (t[-1] - t[70])
+    letter_paths['h'] = np.column_stack((h_x, h_y))
     
     # Letter 'e'
     theta = 2 * np.pi * t
-    e_y = 0.15 * np.cos(theta) + 0.3
-    e_z = 0.15 * np.sin(theta) + 0
+    e_x = 0.15 * np.cos(theta) + 0.3
+    e_y = 0.15 * np.sin(theta) + 0
     # Add entry and exit strokes
-    e_y[:10] = np.linspace(0.15, 0.3 + 0.15, 10)
-    e_z[:10] = np.linspace(0, 0, 10)
-    letter_paths['e'] = np.column_stack((e_y, e_z))
+    e_x[:10] = np.linspace(0.15, 0.3 + 0.15, 10)
+    e_y[:10] = np.linspace(0, 0, 10)
+    letter_paths['e'] = np.column_stack((e_x, e_y))
     
     # Letter 'l'
-    l_y = 0.1 * np.ones_like(t)
-    l_z = 0.4 * t - 0.2
+    l_x = 0.1 * np.ones_like(t)
+    l_y = 0.4 * t - 0.2
     # Add a small curve at the top
-    l_y[80:] = 0.1 + 0.05 * (t[80:] - t[80]) / (t[-1] - t[80])
-    letter_paths['l'] = np.column_stack((l_y, l_z))
+    l_x[80:] = 0.1 + 0.05 * (t[80:] - t[80]) / (t[-1] - t[80])
+    letter_paths['l'] = np.column_stack((l_x, l_y))
     
     # Letter 'o'
     theta = 2 * np.pi * t
-    o_y = 0.15 * np.cos(theta) + 0.3
-    o_z = 0.15 * np.sin(theta) + 0
-    letter_paths['o'] = np.column_stack((o_y, o_z))
+    o_x = 0.15 * np.cos(theta) + 0.3
+    o_y = 0.15 * np.sin(theta) + 0
+    letter_paths['o'] = np.column_stack((o_x, o_y))
     
     return letter_paths
+
 
 
 def generate_word_path(word, letter_paths, spacing=0.4):
@@ -74,31 +77,31 @@ def generate_word_path(word, letter_paths, spacing=0.4):
         spacing: Horizontal spacing between letters
     
     Returns:
-        List of (x, y, z) points, with x indicating pen in/out
+        List of (x, y, z) points, with z indicating pen in/out
     """
     word_path = []
-    current_y_offset = 0
+    current_x_offset = 0
     
     for i, letter in enumerate(word.lower()):
         if letter in letter_paths:
             letter_path = letter_paths[letter].copy()
             
-            letter_path[:, 0] += current_y_offset
+            letter_path[:, 0] += current_x_offset
             
             first_point = letter_path[0].copy()
-            word_path.append((pen_out_x, first_point[0], first_point[1]))
+            word_path.append((first_point[0], first_point[1], pen_out_z))
             
             for point in letter_path:
-                word_path.append((drawing_x, point[0], point[1]))
+                word_path.append((point[0], point[1], drawing_z))
             
-            current_y_offset += spacing
+            current_x_offset += spacing
             
             if i < len(word) - 1:
                 last_point = letter_path[-1].copy()
-                word_path.append((pen_out_x, last_point[0], last_point[1]))
+                word_path.append((last_point[0], last_point[1], pen_out_z))
         else:
             # For unsupported characters (spaces, etc.), just move horizontally
-            current_y_offset += spacing / 2
+            current_x_offset += spacing / 2
     
     return np.array(word_path)
 
@@ -106,15 +109,13 @@ def generate_word_path(word, letter_paths, spacing=0.4):
 def main() -> None:
     assert mujoco.__version__ >= "3.1.0", "Please upgrade to mujoco 3.1.0 or later."
 
-    model = mujoco.MjModel.from_xml_path("../universal_robots_ur5e/scene.xml")
+    model = mujoco.MjModel.from_xml_path("../universal_robots_ur5e/wooden_table_ur5e.xml")
     data = mujoco.MjData(model)
 
     model.opt.timestep = dt
 
-    # End-effector site we wish to control
     site_id = model.site("attachment_site").id
 
-    # Name of bodies we wish to apply gravity compensation to
     body_names = [
         "shoulder_link",
         "upper_arm_link",
@@ -127,7 +128,6 @@ def main() -> None:
     if gravity_compensation:
         model.body_gravcomp[body_ids] = 1.0
 
-    # Get the dof and actuator ids for the joints we wish to control
     joint_names = [
         "shoulder_pan",
         "shoulder_lift",
@@ -139,13 +139,10 @@ def main() -> None:
     dof_ids = np.array([model.joint(name).id for name in joint_names])
     actuator_ids = np.array([model.actuator(name).id for name in joint_names])
 
-    # Initial joint configuration
     key_id = model.key("home").id
 
-    # Mocap body we will control with our trajectory
     mocap_id = model.body("target").mocapid[0]
 
-    # Pre-allocate numpy arrays
     jac = np.zeros((6, model.nv))
     diag = damping * np.eye(6)
     error = np.zeros(6)
@@ -155,29 +152,27 @@ def main() -> None:
     site_quat_conj = np.zeros(4)
     error_quat = np.zeros(4)
 
-    # Generate the word path
     word_to_draw = "hello"  # Can be changed to any word with the supported letters
     letter_paths = generate_letter_paths()
     word_path = generate_word_path(word_to_draw, letter_paths)
     
     # Scale and center the path
-    word_path[:, 1:3] = word_path[:, 1:3] * word_scale
+    word_path[:, :2] = word_path[:, :2] * word_scale
     
-    # Center the word vertically in the workspace
-    word_path[:, 2] += 0.5 - np.mean(word_path[:, 2])
+    # Center the word on the table
+    word_path[:, 0] += 0.5 - np.mean(word_path[:, 0])  # Center X
+    word_path[:, 1] += 0.0 - np.mean(word_path[:, 1])  # Center Y
     
-    # Create time parameter for the path
-    # We want to move slower when the pen is on the surface and faster when the pen is out
+    
     path_length = len(word_path)
     time_per_point = []
     for i in range(1, path_length):
         # Slower speed for drawing, faster for pen out movements
-        if word_path[i, 0] == drawing_x:
+        if word_path[i, 2] == drawing_z:
             time_per_point.append(0.05)  # Slower when drawing
         else:
             time_per_point.append(0.01)  # Faster when pen is out
-    
-    # Cumulative time for each point
+
     cum_time = np.cumsum([0] + time_per_point)
     total_time = cum_time[-1]
     
@@ -193,74 +188,64 @@ def main() -> None:
 
         mujoco.mjv_defaultFreeCamera(model, viewer.cam)
 
-        viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
+        viewer.opt.frame = mujoco.mjtFrame.mjFRAME_NONE
         
-        # Set orientation for the pen - pointing towards the vertical surface
-        # This rotates the end-effector to point along the x-axis
-        forward_quat = np.array([0.7071068, 0, 0.7071068, 0])  # Pointing forward (x-axis)
-        data.mocap_quat[mocap_id] = forward_quat
-        
+        downward_quat = np.array([0, 1, 0, 0])  # Pointing downward (negative z-axis)
+        data.mocap_quat[mocap_id] = downward_quat
+        trail_viz = RealTimeTrailVisualizer()
         while viewer.is_running():
             step_start = time.time()
             
-            # Get current time in the drawing cycle
+            current_pos = data.site(site_id).xpos.copy()
+            # is_drawing = abs(current_pos[2] - drawing_z) < 0.005
+            is_drawing = True
+
             elapsed = (data.time % (total_time * 1.5))  # Add pause between cycles
             drawing_active = elapsed < total_time
+            trail_viz.add_point(current_pos, is_drawing)
             
             if drawing_active:
-                # Get the target position from the interpolated path
                 target_x = float(interp_x(elapsed))
                 target_y = float(interp_y(elapsed))
                 target_z = float(interp_z(elapsed))
                 
-                # Set the target position
                 data.mocap_pos[mocap_id] = np.array([target_x, target_y, target_z])
             else:
-                # Return to starting position during pause
                 start_x = float(interp_x(0))
                 start_y = float(interp_y(0))
-                start_z = float(interp_z(0))
-                data.mocap_pos[mocap_id] = np.array([pen_out_x, start_y, start_z])
+                start_z = pen_out_z
+                data.mocap_pos[mocap_id] = np.array([start_x, start_y, start_z])
 
-            # Position error
             error_pos[:] = data.mocap_pos[mocap_id] - data.site(site_id).xpos
 
-            # Orientation error
             mujoco.mju_mat2Quat(site_quat, data.site(site_id).xmat)
             mujoco.mju_negQuat(site_quat_conj, site_quat)
             mujoco.mju_mulQuat(error_quat, data.mocap_quat[mocap_id], site_quat_conj)
             mujoco.mju_quat2Vel(error_ori, error_quat, 1.0)
 
-            # Get the Jacobian with respect to the end-effector site
             mujoco.mj_jacSite(model, data, jac[:3], jac[3:], site_id)
 
-            # Solve system of equations: J @ dq = error
             dq = jac.T @ np.linalg.solve(jac @ jac.T + diag, error)
 
-            # Scale down joint velocities if they exceed maximum
             if max_angvel > 0:
                 dq_abs_max = np.abs(dq).max()
                 if dq_abs_max > max_angvel:
                     dq *= max_angvel / dq_abs_max
 
-            # Integrate joint velocities to obtain joint positions
             q = data.qpos.copy()
             mujoco.mj_integratePos(model, q, dq, integration_dt)
 
-            # Set the control signal
             np.clip(q, *model.jnt_range.T, out=q)
             data.ctrl[actuator_ids] = q[dof_ids]
 
-            # Step the simulation
             mujoco.mj_step(model, data)
 
-            # Update the viewer
             viewer.sync()
             
-            # Control simulation speed
             time_until_next_step = dt - (time.time() - step_start)
             if time_until_next_step > 0:
                 time.sleep(time_until_next_step)
+
 
 
 if __name__ == "__main__":

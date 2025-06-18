@@ -8,18 +8,23 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 import time
+from traj_visualizer import RealTimeTrailVisualizer
 
-integration_dt: float = 1.0
-damping: float = 1e-4
-gravity_compensation: bool = False
+integration_dt: float = 5.0
+damping: float = 1e-3
+gravity_compensation: bool = True  # Enable for better tracking
 dt: float = 0.002
-max_angvel = 0.0
+max_angvel = 0.0  # Enable velocity limiting for smoother motion
 
+# Table parameters
+table_height = 0.30
+drawing_z = table_height + 0.01  # Just above the table surface
+pen_out_z = table_height + 0.1   # Lifted position above table
 
 def main() -> None:
     assert mujoco.__version__ >= "3.1.0", "Please upgrade to mujoco 3.1.0 or later."
 
-    model = mujoco.MjModel.from_xml_path("../universal_robots_ur5e/scene.xml")
+    model = mujoco.MjModel.from_xml_path("../universal_robots_ur5e/wooden_table_ur5e.xml")
     data = mujoco.MjData(model)
 
     model.opt.timestep = dt
@@ -28,7 +33,7 @@ def main() -> None:
 
     body_names = [
         "shoulder_link",
-        "upper_arm_link",
+        "upper_arm_link", 
         "forearm_link",
         "wrist_1_link",
         "wrist_2_link",
@@ -50,7 +55,6 @@ def main() -> None:
     actuator_ids = np.array([model.actuator(name).id for name in joint_names])
 
     key_id = model.key("home").id
-
     mocap_id = model.body("target").mocapid[0]
 
     jac = np.zeros((6, model.nv))
@@ -62,41 +66,81 @@ def main() -> None:
     site_quat_conj = np.zeros(4)
     error_quat = np.zeros(4)
 
-    def square_path(t: float, side_length: float, center_x: float, center_y: float, cycle_time: float) -> np.ndarray:
+    def square_path_with_pen(t: float, side_length: float, center_x: float, center_y: float, cycle_time: float) -> tuple:
         """
-        Return the (x, y) coordinates of a square path with side length centered at (center_x, center_y)
-        as a function of time t and cycle_time (time to complete one full cycle).
-        
-        The square is traversed in counter-clockwise direction starting from the bottom-right corner.
+        Return the (x, y, z) coordinates and pen state for drawing a square.
+        Returns: (x, y, z, is_drawing)
         """
         # Normalize time to [0, 1] for one complete cycle
         normalized_time = (t % cycle_time) / cycle_time
         
-        # Each side takes up 0.25 of the normalized time
         half_side = side_length / 2
         
-        if normalized_time < 0.25:
-            # Bottom side (right to left)
-            progress = normalized_time * 4
+        # Add transition phases between drawing segments
+        drawing_phase_duration = 0.2  # 20% of cycle time per side
+        transition_duration = 0.05    # 5% transition between sides
+        
+        if normalized_time < drawing_phase_duration:
+            # Drawing bottom side (right to left)
+            progress = normalized_time / drawing_phase_duration
             x = center_x + half_side - side_length * progress
             y = center_y - half_side
-        elif normalized_time < 0.5:
-            # Left side (bottom to top)
-            progress = (normalized_time - 0.25) * 4
+            z = drawing_z
+            is_drawing = True
+            
+        elif normalized_time < drawing_phase_duration + transition_duration:
+            # Transition to left side
+            x = center_x - half_side
+            y = center_y - half_side
+            z = pen_out_z
+            is_drawing = False
+            
+        elif normalized_time < 2 * drawing_phase_duration + transition_duration:
+            # Drawing left side (bottom to top)
+            progress = (normalized_time - drawing_phase_duration - transition_duration) / drawing_phase_duration
             x = center_x - half_side
             y = center_y - half_side + side_length * progress
-        elif normalized_time < 0.75:
-            # Top side (left to right)
-            progress = (normalized_time - 0.5) * 4
+            z = drawing_z
+            is_drawing = True
+            
+        elif normalized_time < 2 * drawing_phase_duration + 2 * transition_duration:
+            # Transition to top side
+            x = center_x - half_side
+            y = center_y + half_side
+            z = pen_out_z
+            is_drawing = False
+            
+        elif normalized_time < 3 * drawing_phase_duration + 2 * transition_duration:
+            # Drawing top side (left to right)
+            progress = (normalized_time - 2 * drawing_phase_duration - 2 * transition_duration) / drawing_phase_duration
             x = center_x - half_side + side_length * progress
             y = center_y + half_side
-        else:
-            # Right side (top to bottom)
-            progress = (normalized_time - 0.75) * 4
+            z = drawing_z
+            is_drawing = True
+            
+        elif normalized_time < 3 * drawing_phase_duration + 3 * transition_duration:
+            # Transition to right side
+            x = center_x + half_side
+            y = center_y + half_side
+            z = pen_out_z
+            is_drawing = False
+            
+        elif normalized_time < 4 * drawing_phase_duration + 3 * transition_duration:
+            # Drawing right side (top to bottom)
+            progress = (normalized_time - 3 * drawing_phase_duration - 3 * transition_duration) / drawing_phase_duration
             x = center_x + half_side
             y = center_y + half_side - side_length * progress
+            z = drawing_z
+            is_drawing = True
             
-        return np.array([x, y])
+        else:
+            # Final transition back to start
+            x = center_x + half_side
+            y = center_y - half_side
+            z = pen_out_z
+            is_drawing = False
+            
+        return x, y, z, is_drawing
 
     with mujoco.viewer.launch_passive(
         model=model, data=data, show_left_ui=False, show_right_ui=False
@@ -106,23 +150,42 @@ def main() -> None:
         mujoco.mjv_defaultFreeCamera(model, viewer.cam)
 
         viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
+        downward_quat = np.array([0, 1, 0, 0])  # Pointing downward (negative z-axis)
+        data.mocap_quat[mocap_id] = downward_quat
 
-        square_side_length = 0.2  # Side length of square in meters
-        square_center_x = 0.5     # X-coordinate of square center
-        square_center_y = 0.0     # Y-coordinate of square center
-        cycle_time = 8.0          # Time to complete one full cycle in seconds
+        square_side_length = 0.15  # Smaller square for better visualization
+        square_center_x = 0.5      # X-coordinate of square center
+        square_center_y = 0.0      # Y-coordinate of square center
+        cycle_time = 30.0          # Slower for clearer drawing
         
-        # Fixed z-coordinate for the path
-        z_height = 0.5
+        trail_viz = RealTimeTrailVisualizer()
 
         while viewer.is_running():
             step_start = time.time()
 
-            xy_pos = square_path(data.time, square_side_length, square_center_x, square_center_y, cycle_time)
-            data.mocap_pos[mocap_id, 0] = xy_pos[0]
-            data.mocap_pos[mocap_id, 1] = xy_pos[1]
-            data.mocap_pos[mocap_id, 2] = z_height
+            # Get target position and drawing state
+            x, y, z, expected_drawing = square_path_with_pen(
+                data.time, square_side_length, square_center_x, square_center_y, cycle_time
+            )
+            
+            # Set mocap target
+            data.mocap_pos[mocap_id] = np.array([x, y, z])
 
+            # Get current end-effector position
+            current_pos = data.site(site_id).xpos.copy()
+            
+            # Check if we're actually drawing (close to drawing height)
+            is_drawing = abs(current_pos[2] - drawing_z) < 0.008  # Slightly larger tolerance
+            
+            # Update trail visualization
+            trail_viz.add_point(current_pos, is_drawing)
+            
+            # Print status occasionally
+            if int(data.time * 10) % 50 == 0:  # Every 5 seconds
+                print(f"Time: {data.time:.1f}s, Expected drawing: {expected_drawing}, "
+                      f"Actual drawing: {is_drawing}, Height: {current_pos[2]:.3f}")
+
+            # Control computation (unchanged)
             error_pos[:] = data.mocap_pos[mocap_id] - data.site(site_id).xpos
 
             mujoco.mju_mat2Quat(site_quat, data.site(site_id).xmat)

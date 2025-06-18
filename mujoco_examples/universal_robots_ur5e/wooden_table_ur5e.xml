@@ -1,0 +1,35 @@
+<mujoco model="ur5e tabletop scene">
+  <include file="ur5e.xml"/>
+
+  <statistic center="0.3 0 0.3" extent="0.8" meansize="0.08"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.1 0.1 0.1" specular="0 0 0"/>
+    <global azimuth="120" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" rgb1=".2 .3 .4" rgb2=".1 0.15 0.2" width="512" height="512"
+      mark="cross" markrgb=".8 .8 .8"/>
+    <material name="grid" texture="grid" texrepeat="1 1" texuniform="true"/>
+    <material name="wood" rgba="0.8 0.6 0.4 1"/>
+    <material name="paper" rgba="1.0 1.0 1.0 1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" directional="true"/>
+    <geom name="floor" size="1 1 0.01" type="plane" material="grid"/>
+    
+    <!-- Table -->
+    <body name="table" pos="0.5 0 0.15">
+      <geom name="table_top" type="box" size="0.4 0.3 0.15" material="wood"/>
+      <!-- Paper surface on table -->
+      <geom name="paper" type="box" size="0.35 0.25 0.001" pos="0 0 0.151" material="paper"/>
+    </body>
+    
+    <body name="target" pos="0.5 0 0.5" quat="0 0 0 1" mocap="true">
+      <geom type="box" size=".02 .02 .02" contype="0" conaffinity="0" rgba=".6 .3 .3 .5"/>
+      <site type="sphere" size="0.01" rgba="0 0 1 1" group="1"/>
+    </body>
+  </worldbody>
+</mujoco>

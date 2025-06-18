@@ -5,6 +5,7 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 import time
+from traj_visualizer import RealTimeTrailVisualizer
 
 integration_dt: float = 1.0
 
@@ -21,8 +22,6 @@ def main() -> None:
 
     model.opt.timestep = dt
 
-    # End-effector site we wish to control, in this case a site attached to the last
-    # link (wrist_3_link) of the robot.
     site_id = model.site("attachment_site").id
     print(f"site_id: {site_id}")
 
@@ -79,18 +78,20 @@ def main() -> None:
         mujoco.mjv_defaultFreeCamera(model, viewer.cam)
 
         viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
+        trail_viz = RealTimeTrailVisualizer()
 
         while viewer.is_running():
             step_start = time.time()
+            current_pos = data.site(site_id).xpos.copy()
+            is_drawing=True
+            trail_viz.add_point(current_pos, is_drawing)
+
             data.mocap_pos[mocap_id, 0:2] = circle(data.time, 0.1, 0.5, 0.0, 0.5)
-            print("Set target position:", data.mocap_pos[mocap_id, 0:2])
             error_pos[:] = data.mocap_pos[mocap_id] - data.site(site_id).xpos
-            print("Position error:", error_pos)
             mujoco.mju_mat2Quat(site_quat, data.site(site_id).xmat)
             mujoco.mju_negQuat(site_quat_conj, site_quat)
             mujoco.mju_mulQuat(error_quat, data.mocap_quat[mocap_id], site_quat_conj)
             mujoco.mju_quat2Vel(error_ori, error_quat, 1.0)
-            print("Orientation error:", error_ori)
             mujoco.mj_jacSite(model, data, jac[:3], jac[3:], site_id)
 
             dq = jac.T @ np.linalg.solve(jac @ jac.T + diag, error)
