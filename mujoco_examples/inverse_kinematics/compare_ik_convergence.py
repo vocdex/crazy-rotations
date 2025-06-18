@@ -421,7 +421,7 @@ def run_convergence_analysis(model_path, num_samples=20, max_iterations=200, ran
 
 
 if __name__ == "__main__":
-    model_path = "../mujoco_menagerie/universal_robots_ur5e/scene.xml"
+    model = mujoco.MjModel.from_xml_path("../universal_robots_ur5e/scene.xml")
     
     run_type = "benchmark"  # Options: "single_case" or "benchmark"
     

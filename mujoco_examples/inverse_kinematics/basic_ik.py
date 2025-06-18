@@ -339,7 +339,7 @@ if __name__ == "__main__":
     parser.add_argument("--random-quat", action="store_true")
     args = parser.parse_args()
 
-    model = mujoco.MjModel.from_xml_path("../mujoco_menagerie/universal_robots_ur5e/scene.xml")
+    model = mujoco.MjModel.from_xml_path("../universal_robots_ur5e/scene.xml")
     data = mujoco.MjData(model)
     
     model.opt.timestep = dt

@@ -106,7 +106,7 @@ def generate_word_path(word, letter_paths, spacing=0.4):
 def main() -> None:
     assert mujoco.__version__ >= "3.1.0", "Please upgrade to mujoco 3.1.0 or later."
 
-    model = mujoco.MjModel.from_xml_path("../mujoco_menagerie/universal_robots_ur5e/scene.xml")
+    model = mujoco.MjModel.from_xml_path("../universal_robots_ur5e/scene.xml")
     data = mujoco.MjData(model)
 
     model.opt.timestep = dt
@@ -193,7 +193,6 @@ def main() -> None:
 
         mujoco.mjv_defaultFreeCamera(model, viewer.cam)
 
-        # Toggle site frame visualization
         viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
         
         # Set orientation for the pen - pointing towards the vertical surface
