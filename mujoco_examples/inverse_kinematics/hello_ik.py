@@ -11,18 +11,21 @@ from scipy.interpolate import interp1d
 from traj_visualizer import RealTimeTrailVisualizer
 
 integration_dt: float = 1.0
-damping: float = 1e-4
+damping: float = 1e-3
 gravity_compensation: bool = True
 dt: float = 0.002
 
 max_angvel = 1.0  # Limit velocity for smoother writing
 word_scale = 0.2
 
-#Table parameters
 table_height = 0.30
-drawing_z = table_height + 0.01  # Just above the table surface
-pen_out_z = table_height + 0.1   # Lifted position above table
+drawing_z = table_height + 0.02  
+pen_out_z = table_height + 0.08  
 
+radius = 0.05      # Smaller radius
+center_x = 0.6     
+center_y = 0.0
+frequency = 0.2
 def generate_letter_paths():
     """
     Generate parametric paths for cursive letters.
@@ -53,8 +56,6 @@ def generate_letter_paths():
     # Letter 'l'
     l_x = 0.1 * np.ones_like(t)
     l_y = 0.4 * t - 0.2
-    # Add a small curve at the top
-    l_x[80:] = 0.1 + 0.05 * (t[80:] - t[80]) / (t[-1] - t[80])
     letter_paths['l'] = np.column_stack((l_x, l_y))
     
     # Letter 'o'
@@ -67,7 +68,7 @@ def generate_letter_paths():
 
 
 
-def generate_word_path(word, letter_paths, spacing=0.4):
+def generate_word_path(word, letter_paths, spacing=0.2):
     """
     Generate a path for the entire word by combining letter paths.
     
@@ -163,24 +164,41 @@ def main() -> None:
     word_path[:, 0] += 0.5 - np.mean(word_path[:, 0])  # Center X
     word_path[:, 1] += 0.0 - np.mean(word_path[:, 1])  # Center Y
     
-    
+    # Define speeds for different movements
+    drawing_speed = 0.1   # m/s
+    pen_out_speed = 0.3   # m/s
+
     path_length = len(word_path)
     time_per_point = []
+    
+    # Calculate time for each segment based on distance and speed
     for i in range(1, path_length):
-        # Slower speed for drawing, faster for pen out movements
-        if word_path[i, 2] == drawing_z:
-            time_per_point.append(0.05)  # Slower when drawing
+        start_point = word_path[i-1]
+        end_point = word_path[i]
+        
+        distance = np.linalg.norm(end_point - start_point)
+        
+        if end_point[2] == drawing_z:
+            speed = drawing_speed
         else:
-            time_per_point.append(0.01)  # Faster when pen is out
+            speed = pen_out_speed
+            
+        if distance > 1e-6:
+            segment_time = distance / speed
+        else:
+            # THIS IS THE FIX: Assign a tiny non-zero time to zero-distance segments
+            # This prevents duplicate values in cum_time.
+            segment_time = 1e-5
+            
+        time_per_point.append(segment_time)
 
     cum_time = np.cumsum([0] + time_per_point)
     total_time = cum_time[-1]
-    
-    # Create interpolation functions for each coordinate
-    interp_x = interp1d(cum_time, word_path[:, 0], bounds_error=False, fill_value="extrapolate")
-    interp_y = interp1d(cum_time, word_path[:, 1], bounds_error=False, fill_value="extrapolate")
-    interp_z = interp1d(cum_time, word_path[:, 2], bounds_error=False, fill_value="extrapolate")
 
+    # This should now work without error
+    interp_x = interp1d(cum_time, word_path[:, 0], kind='linear', bounds_error=False, fill_value="extrapolate")
+    interp_y = interp1d(cum_time, word_path[:, 1], kind='linear', bounds_error=False, fill_value="extrapolate")
+    interp_z = interp1d(cum_time, word_path[:, 2], kind='cubic', bounds_error=False, fill_value="extrapolate")
     with mujoco.viewer.launch_passive(
         model=model, data=data, show_left_ui=False, show_right_ui=False
     ) as viewer:
@@ -197,8 +215,8 @@ def main() -> None:
             step_start = time.time()
             
             current_pos = data.site(site_id).xpos.copy()
-            # is_drawing = abs(current_pos[2] - drawing_z) < 0.005
-            is_drawing = True
+            is_drawing = abs(current_pos[2] - drawing_z) < 0.01
+            print(current_pos[2], drawing_z, is_drawing)
 
             elapsed = (data.time % (total_time * 1.5))  # Add pause between cycles
             drawing_active = elapsed < total_time

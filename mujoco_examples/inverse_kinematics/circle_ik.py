@@ -14,16 +14,22 @@ gravity_compensation: bool = False
 dt: float = 0.002
 max_angvel = 0.0
 
+table_height = 0.30
+drawing_z = table_height + 0.05  
+pen_out_z = table_height + 0.10  
 
+radius = 0.05      # Smaller radius
+center_x = 0.6     
+center_y = 0.0
+frequency = 0.2 
 def main() -> None:
     assert mujoco.__version__ >= "3.1.0", "Please upgrade to mujoco 3.1.0 or later."
-    model = mujoco.MjModel.from_xml_path("../universal_robots_ur5e/scene.xml")
+    model = mujoco.MjModel.from_xml_path("../universal_robots_ur5e/wooden_table_ur5e.xml")
     data = mujoco.MjData(model)
 
     model.opt.timestep = dt
 
     site_id = model.site("attachment_site").id
-    print(f"site_id: {site_id}")
 
     # Name of bodies we wish to apply gravity compensation to.
     body_names = [
@@ -52,7 +58,6 @@ def main() -> None:
     key_id = model.key("home").id
 
     mocap_id = model.body("target").mocapid[0]
-    print(f"mocap_id: {mocap_id}")
 
     jac = np.zeros((6, model.nv))
     diag = damping * np.eye(6)
@@ -80,13 +85,20 @@ def main() -> None:
         viewer.opt.frame = mujoco.mjtFrame.mjFRAME_SITE
         trail_viz = RealTimeTrailVisualizer()
 
+        # Enable contact visualization to debug
+        viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = 1
+        viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTFORCE] = 1
+
         while viewer.is_running():
             step_start = time.time()
             current_pos = data.site(site_id).xpos.copy()
-            is_drawing=True
+            is_drawing = True
+
             trail_viz.add_point(current_pos, is_drawing)
 
-            data.mocap_pos[mocap_id, 0:2] = circle(data.time, 0.1, 0.5, 0.0, 0.5)
+            data.mocap_pos[mocap_id, 0:2] = circle(data.time, radius, center_x, center_y, frequency)
+            data.mocap_pos[mocap_id, 2] = drawing_z
+            data.mocap_quat[mocap_id] = [0,1,0,0]  # Facing downwards
             error_pos[:] = data.mocap_pos[mocap_id] - data.site(site_id).xpos
             mujoco.mju_mat2Quat(site_quat, data.site(site_id).xmat)
             mujoco.mju_negQuat(site_quat_conj, site_quat)
